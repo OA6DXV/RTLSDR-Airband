@@ -880,8 +880,7 @@ void write_stats_file(timeval* last_stats_write) {
     timeval current_time;
     gettimeofday(&current_time, NULL);
 
-    static const double STATS_FILE_TIMING = 15.0;
-    if (!do_exit && delta_sec(last_stats_write, &current_time) < STATS_FILE_TIMING) {
+    if (!do_exit && delta_sec(last_stats_write, &current_time) < stats_update_interval) {
         return;
     }
 
@@ -987,9 +986,9 @@ void* output_thread(void* param) {
         dev->waveavail = 0;
     }
 
-    // Final stats flush: do_exit=1 bypasses the 15s throttle, so this always
-    // writes regardless of run duration. Called after the post-loop flush above
-    // so counters reflect all processed output.
+    // Final stats flush: do_exit=1 bypasses the configured throttle, so this
+    // always writes regardless of run duration. Called after the post-loop
+    // flush above so counters reflect all processed output.
     if (output_param->device_start == 0) {
         write_stats_file(&last_stats_write);
     }

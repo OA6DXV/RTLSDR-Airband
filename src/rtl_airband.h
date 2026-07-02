@@ -361,6 +361,7 @@ extern bool multiple_output_threads;
 extern char* stats_filepath;
 extern size_t fft_size, fft_size_log;
 extern int device_count, mixer_count;
+extern int stats_update_interval;
 extern int shout_metadata_delay;
 extern volatile int do_exit, device_opened;
 extern float alpha;
