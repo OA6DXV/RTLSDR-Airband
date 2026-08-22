@@ -38,8 +38,6 @@ struct vc_sm_cma_ioctl_import_dmabuf {
     __u64 dma_addr;
 };
 
-#define VC_SM_CMA_IOCTL_MEM_IMPORT_DMABUF \
-    _IOR(VC_SM_CMA_MAGIC_TYPE, VC_SM_CMA_CMD_IMPORT_DMABUF, \
-         struct vc_sm_cma_ioctl_import_dmabuf)
+#define VC_SM_CMA_IOCTL_MEM_IMPORT_DMABUF _IOR(VC_SM_CMA_MAGIC_TYPE, VC_SM_CMA_CMD_IMPORT_DMABUF, struct vc_sm_cma_ioctl_import_dmabuf)
 
 #endif
