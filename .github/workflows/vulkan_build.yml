@@ -39,7 +39,7 @@ jobs:
         if: ${{ !matrix.emulated }}
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y libvulkan-dev glslang-tools
+          sudo apt-get install -y libvulkan-dev glslang-tools mesa-vulkan-drivers
 
       - name: Configure Vulkan platform
         if: ${{ !matrix.emulated }}
@@ -48,6 +48,24 @@ jobs:
       - name: Build Vulkan platform
         if: ${{ !matrix.emulated }}
         run: cmake --build builds/vulkan-${{ matrix.arch }} -j$(nproc)
+
+      - name: Verify software Vulkan falls back to FFTW
+        if: ${{ !matrix.emulated }}
+        run: |
+          set -eux
+          c++ -std=c++11 \
+            -Isrc \
+            -Ibuilds/vulkan-${{ matrix.arch }}/src \
+            src/vulkan_fft.cpp \
+            src/vulkan_fft_backend_test.cpp \
+            -lvulkan -lfftw3f \
+            -o builds/vulkan-${{ matrix.arch }}/vulkan_fft_backend_test
+          LVP_ICD="$(find /usr/share/vulkan/icd.d -type f -name 'lvp_icd*.json' -print -quit)"
+          test -n "$LVP_ICD"
+          echo "Forcing software Vulkan ICD: $LVP_ICD"
+          VK_DRIVER_FILES="$LVP_ICD" \
+          VK_ICD_FILENAMES="$LVP_ICD" \
+            builds/vulkan-${{ matrix.arch }}/vulkan_fft_backend_test
 
       - name: Enable QEMU for ARM builds
         if: ${{ matrix.emulated }}
