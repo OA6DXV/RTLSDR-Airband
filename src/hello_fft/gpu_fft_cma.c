@@ -104,6 +104,8 @@ int gpu_fft_alloc(int mb, unsigned size, struct GPU_FFT_PTR* ptr) {
     void* arm_map;
     int heap_fd;
     int ret = -4;
+    uint32_t vc_addr = 0;
+    uint32_t cache_alias = 0;
 
     if (acquire_qpu(mb) != 0)
         return -1;
@@ -150,8 +152,8 @@ int gpu_fft_alloc(int mb, unsigned size, struct GPU_FFT_PTR* ptr) {
     if (sync_dma_buf(allocation.fd, DMA_BUF_SYNC_RW | DMA_BUF_SYNC_START) < 0)
         goto error_vcsm;
 
-    uint32_t vc_addr = static_cast<uint32_t>(import.dma_addr);
-    const uint32_t cache_alias = vc_addr & 0xC0000000U;
+    vc_addr = static_cast<uint32_t>(import.dma_addr);
+    cache_alias = vc_addr & 0xC0000000U;
     if (cache_alias != 0xC0000000U && cache_alias != 0x80000000U)
         vc_addr |= 0xC0000000U;
 
