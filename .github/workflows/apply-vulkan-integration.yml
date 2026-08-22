@@ -1,0 +1,33 @@
+name: Apply Vulkan integration patch
+
+on:
+  push:
+    branches:
+      - vulkan-dev
+    paths:
+      - .github/vulkan-integration.patch
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: vulkan-dev
+          fetch-depth: 0
+      - name: Apply integration patch
+        run: |
+          git apply --check .github/vulkan-integration.patch
+          git apply .github/vulkan-integration.patch
+          rm .github/vulkan-integration.patch
+          rm .github/workflows/apply-vulkan-integration.yml
+      - name: Commit integration
+        run: |
+          git config user.name "OA6DXV"
+          git config user.email "oa6dxv@gmail.com"
+          git add -A
+          git commit -m "Integrate portable Vulkan FFT platform"
+          git push origin HEAD:vulkan-dev
