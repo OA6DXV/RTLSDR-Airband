@@ -7,6 +7,7 @@
 The Vulkan backend:
 
 - uses no window-system integration, surface, swapchain, X11, or Wayland;
+- requires Vulkan 1.1 or newer;
 - enumerates Vulkan physical devices at runtime and selects a non-CPU device with a compute queue;
 - prefers discrete GPUs, then integrated GPUs, while preferring compute-only queues when available;
 - batches FFT transforms in a single command buffer;
@@ -14,6 +15,8 @@ The Vulkan backend:
 - selects a power-of-two workgroup size from the selected device limits through a shader specialization constant;
 - uses the same SPIR-V compute shader on all vendors;
 - falls back to batched FFTW3F automatically if Vulkan initialization or device selection fails.
+
+The Vulkan 1.1 minimum allows the compute shader workgroup size to be specialized at runtime instead of baking GPU-specific values into separate shaders.
 
 The fallback can be forced for comparison tests:
 
@@ -34,8 +37,8 @@ Without that variable the device is selected automatically.
 
 In addition to the normal RTLSDR-Airband dependencies, the Vulkan build needs:
 
-- Vulkan headers and loader;
-- a Vulkan ICD for the target GPU;
+- Vulkan 1.1+ headers and loader;
+- a Vulkan 1.1+ ICD for the target GPU;
 - either `glslc` or `glslangValidator` at build time;
 - FFTW3F for the automatic CPU fallback.
 
@@ -50,8 +53,8 @@ sudo apt install libvulkan-dev glslc libfftw3-dev
 Configure with:
 
 ```sh
-cmake -DPLATFORM=vulkan ..
-make -j$(nproc)
+cmake -B build-vulkan -DCMAKE_BUILD_TYPE=Release -DPLATFORM=vulkan -S .
+cmake --build build-vulkan -j$(nproc)
 ```
 
 The compute shader is compiled to SPIR-V during the build and embedded in the executable, so no shader file is required at runtime.
