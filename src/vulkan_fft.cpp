@@ -18,6 +18,7 @@
 namespace {
 
 const double PI = 3.141592653589793238462643383279502884;
+const uint32_t MIN_VULKAN_API = VK_MAKE_VERSION(1, 1, 0);
 
 std::string lower_string(const std::string& value) {
     std::string result(value);
@@ -332,6 +333,8 @@ struct VulkanFFT::Impl {
             VkPhysicalDeviceProperties properties;
             vkGetPhysicalDeviceProperties(candidates[device_index], &properties);
 
+            if (properties.apiVersion < MIN_VULKAN_API)
+                continue;
             if (properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU)
                 continue;
             if (!requested.empty() && lower_string(properties.deviceName).find(requested) == std::string::npos)
@@ -386,9 +389,9 @@ struct VulkanFFT::Impl {
 
         if (best_device == VK_NULL_HANDLE) {
             if (requested.empty())
-                last_error = "No non-CPU Vulkan device with a compute queue was found";
+                last_error = "No Vulkan 1.1+ non-CPU device with a compute queue was found";
             else
-                last_error = "No Vulkan GPU matching RTL_AIRBAND_VULKAN_DEVICE has a compute queue";
+                last_error = "No Vulkan 1.1+ GPU matching RTL_AIRBAND_VULKAN_DEVICE has a compute queue";
             return false;
         }
 
@@ -648,7 +651,7 @@ struct VulkanFFT::Impl {
         app_info.applicationVersion = 1;
         app_info.pEngineName = "RTLSDR-Airband Vulkan FFT";
         app_info.engineVersion = 1;
-        app_info.apiVersion = VK_API_VERSION_1_0;
+        app_info.apiVersion = MIN_VULKAN_API;
 
         VkInstanceCreateInfo instance_info = {};
         instance_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
