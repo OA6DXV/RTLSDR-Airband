@@ -9,8 +9,22 @@ on:
 
 jobs:
   vulkan_build:
+    name: Vulkan ${{ matrix.arch }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            emulated: false
+          - arch: arm64
+            emulated: true
+            docker_platform: linux/arm64
+          - arch: armhf
+            emulated: true
+            docker_platform: linux/arm/v7
+
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -18,15 +32,63 @@ jobs:
           fetch-depth: '0'
 
       - name: Install project dependencies
+        if: ${{ !matrix.emulated }}
         run: .github/install_dependencies
 
       - name: Install Vulkan build dependencies
+        if: ${{ !matrix.emulated }}
         run: |
           sudo apt-get update -y
           sudo apt-get install -y libvulkan-dev glslang-tools
 
       - name: Configure Vulkan platform
-        run: cmake -B builds/vulkan -DCMAKE_BUILD_TYPE=Release -DPLATFORM=vulkan -S .
+        if: ${{ !matrix.emulated }}
+        run: cmake -B builds/vulkan-${{ matrix.arch }} -DCMAKE_BUILD_TYPE=Release -DPLATFORM=vulkan -S .
 
       - name: Build Vulkan platform
-        run: cmake --build builds/vulkan -j$(nproc)
+        if: ${{ !matrix.emulated }}
+        run: cmake --build builds/vulkan-${{ matrix.arch }} -j$(nproc)
+
+      - name: Enable QEMU for ARM builds
+        if: ${{ matrix.emulated }}
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64,arm
+
+      - name: Build Vulkan platform in ARM userspace
+        if: ${{ matrix.emulated }}
+        run: |
+          docker run --rm \
+            --platform '${{ matrix.docker_platform }}' \
+            -v "$PWD:/work" \
+            -w /work \
+            debian:bookworm-slim \
+            bash -lc '
+              set -eux
+              apt-get update
+              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+                build-essential \
+                ca-certificates \
+                cmake \
+                git \
+                glslang-tools \
+                libconfig++-dev \
+                libfftw3-dev \
+                libmp3lame-dev \
+                libshout3-dev \
+                libvulkan-dev \
+                pkg-config
+              rm -rf /var/lib/apt/lists/*
+              echo "Build architecture: $(dpkg --print-architecture)"
+              uname -m
+              cmake -B builds/vulkan-${{ matrix.arch }} \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DPLATFORM=vulkan \
+                -DRTLSDR=OFF \
+                -DMIRISDR=OFF \
+                -DSOAPYSDR=OFF \
+                -DPULSEAUDIO=OFF \
+                -S .
+              cmake --build builds/vulkan-${{ matrix.arch }} -j2
+              file builds/vulkan-${{ matrix.arch }}/src/rtl_airband
+            '
