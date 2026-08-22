@@ -1,0 +1,27 @@
+if(NOT DEFINED INPUT OR NOT DEFINED OUTPUT)
+    message(FATAL_ERROR "embed_binary.cmake requires INPUT and OUTPUT")
+endif()
+
+file(READ "${INPUT}" BINARY_HEX HEX)
+string(REGEX MATCHALL ".." BINARY_BYTES "${BINARY_HEX}")
+
+file(WRITE "${OUTPUT}" "#ifndef RTL_AIRBAND_VULKAN_FFT_SPV_H\n")
+file(APPEND "${OUTPUT}" "#define RTL_AIRBAND_VULKAN_FFT_SPV_H\n\n")
+file(APPEND "${OUTPUT}" "#include <cstddef>\n\n")
+file(APPEND "${OUTPUT}" "alignas(4) static const unsigned char vulkan_fft_spv[] = {\n    ")
+
+set(COLUMN 0)
+foreach(BYTE ${BINARY_BYTES})
+    file(APPEND "${OUTPUT}" "0x${BYTE},")
+    math(EXPR COLUMN "${COLUMN} + 1")
+    if(COLUMN EQUAL 16)
+        file(APPEND "${OUTPUT}" "\n    ")
+        set(COLUMN 0)
+    else()
+        file(APPEND "${OUTPUT}" " ")
+    endif()
+endforeach()
+
+file(APPEND "${OUTPUT}" "\n};\n")
+file(APPEND "${OUTPUT}" "static const size_t vulkan_fft_spv_size = sizeof(vulkan_fft_spv);\n\n")
+file(APPEND "${OUTPUT}" "#endif /* RTL_AIRBAND_VULKAN_FFT_SPV_H */\n")
