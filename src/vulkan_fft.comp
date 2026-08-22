@@ -1,0 +1,73 @@
+#version 450
+
+layout(local_size_x_id = 0) in;
+
+layout(set = 0, binding = 0, std430) readonly buffer InputBuffer {
+    vec2 value[];
+} input_buffer;
+
+layout(set = 0, binding = 1, std430) writeonly buffer OutputBuffer {
+    vec2 value[];
+} output_buffer;
+
+layout(set = 0, binding = 2, std430) readonly buffer TwiddleBuffer {
+    vec2 value[];
+} twiddle_buffer;
+
+layout(push_constant) uniform Parameters {
+    uint fft_size;
+    uint batch_size;
+    uint stage;
+    uint mode;
+} params;
+
+vec2 complex_multiply(vec2 a, vec2 b) {
+    return vec2(a.x * b.x - a.y * b.y,
+                a.x * b.y + a.y * b.x);
+}
+
+void bit_reverse_pass(uint index) {
+    uint total = params.fft_size * params.batch_size;
+    if (index >= total)
+        return;
+
+    uint batch = index / params.fft_size;
+    uint sample = index - batch * params.fft_size;
+    uint bits = uint(findMSB(params.fft_size));
+    uint reversed = bitfieldReverse(sample) >> (32u - bits);
+
+    output_buffer.value[batch * params.fft_size + reversed] = input_buffer.value[index];
+}
+
+void fft_stage(uint index) {
+    uint butterflies_per_fft = params.fft_size >> 1u;
+    uint total = butterflies_per_fft * params.batch_size;
+    if (index >= total)
+        return;
+
+    uint batch = index / butterflies_per_fft;
+    uint butterfly = index - batch * butterflies_per_fft;
+    uint span = 1u << params.stage;
+    uint half_span = span >> 1u;
+    uint group = butterfly / half_span;
+    uint offset = butterfly - group * half_span;
+    uint first = group * span + offset;
+    uint second = first + half_span;
+    uint base = batch * params.fft_size;
+
+    vec2 a = input_buffer.value[base + first];
+    vec2 b = input_buffer.value[base + second];
+    uint twiddle_index = offset * (params.fft_size / span);
+    vec2 t = complex_multiply(b, twiddle_buffer.value[twiddle_index]);
+
+    output_buffer.value[base + first] = a + t;
+    output_buffer.value[base + second] = a - t;
+}
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    if (params.mode == 0u)
+        bit_reverse_pass(index);
+    else
+        fft_stage(index);
+}
