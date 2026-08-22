@@ -1,10 +1,20 @@
-set(hello_fft_source_files
-	mailbox.c
-	gpu_fft.c
-	gpu_fft_twiddles.c
-	gpu_fft_shaders.c
-	gpu_fft_base.c
-)
+if(VC4_CMA)
+	set(hello_fft_source_files
+		mailbox.c
+		gpu_fft_v4cma.c
+		gpu_fft_twiddles.c
+		gpu_fft_shaders.c
+		gpu_fft_cma.c
+	)
+else()
+	set(hello_fft_source_files
+		mailbox.c
+		gpu_fft.c
+		gpu_fft_twiddles.c
+		gpu_fft_shaders.c
+		gpu_fft_base.c
+	)
+endif()
 # Temp hack due to the fact that mailbox.c includes ../rtl_airband.h which
 # is a C++ header.
 SET_SOURCE_FILES_PROPERTIES(${hello_fft_source_files} PROPERTIES LANGUAGE CXX )

@@ -1,5 +1,7 @@
 include(CheckCXXCompilerFlag)
 include(CheckCXXSymbolExists)
+include(CheckCXXSourceCompiles)
+include(CheckIncludeFileCXX)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/CMakeModules")
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
@@ -188,6 +190,7 @@ endif()
 
 option(BCM_VC "Enable Broadcom Videocore 3 support" OFF)
 set(WITH_BCM_VC FALSE)
+set(VC4_CMA FALSE)
 
 # error out on depricated PLATFORM values
 if(PLATFORM STREQUAL "rpiv1" OR PLATFORM STREQUAL "armv7-generic" OR PLATFORM STREQUAL "armv8-generic")
@@ -199,6 +202,25 @@ elseif(PLATFORM STREQUAL "rpiv2")
 	add_compile_options(-march=armv7-a -mfpu=neon-vfpv4 -mfloat-abi=hard)
 	enable_language(ASM)
 	list(APPEND rtl_airband_extra_sources rtl_airband_neon.s)
+elseif(PLATFORM STREQUAL "v4cma")
+	check_cxx_source_compiles("
+#ifndef __aarch64__
+#error Not an AArch64 compiler
+#endif
+int main() { return 0; }
+" RTL_AIRBAND_COMPILER_ARM64)
+	if(NOT RTL_AIRBAND_COMPILER_ARM64)
+		message(FATAL_ERROR "PLATFORM=v4cma requires an AArch64 compiler")
+	endif()
+	check_include_file_cxx("linux/dma-heap.h" HAVE_LINUX_DMA_HEAP_H)
+	if(NOT HAVE_LINUX_DMA_HEAP_H)
+		message(FATAL_ERROR "PLATFORM=v4cma requires linux/dma-heap.h")
+	endif()
+	set(BCM_VC ON)
+	set(VC4_CMA TRUE)
+	add_compile_options(-march=armv8-a)
+	add_compile_definitions(HAVE_VC4_CMA)
+	list(APPEND rtl_airband_extra_sources samplefft_v4cma.cpp)
 # native - let the complier optimize to run on local hardware (default)
 elseif(PLATFORM STREQUAL "native")
 	CHECK_CXX_COMPILER_FLAG(-march=native CXX_HAS_MARCH_NATIVE)
@@ -212,7 +234,7 @@ elseif(PLATFORM STREQUAL "generic")
 	# NO-OP
 # error out on unrecongnnized PLATFORM value
 else()
-	message(FATAL_ERROR "Unknown platform '${PLATFORM}'. Valid options are: rpiv2, native, and generic")
+	message(FATAL_ERROR "Unknown platform '${PLATFORM}'. Valid options are: rpiv2, v4cma, native, and generic")
 endif()
 
 # Try using VC GPU if enabled. Fallback to fftw3f if disabled.
@@ -252,6 +274,7 @@ message(STATUS "- Other options:")
 message(STATUS "  - Platform:\t\t${PLATFORM}")
 message(STATUS "  - Build Unit Tests:\t${BUILD_UNITTESTS}")
 message(STATUS "  - Broadcom VideoCore GPU:\t${WITH_BCM_VC}")
+message(STATUS "  - VideoCore IV CMA backend:\t${VC4_CMA}")
 message(STATUS "  - NFM support:\t\t${NFM}")
 message(STATUS "  - PulseAudio:\t\trequested: ${PULSEAUDIO}, enabled: ${WITH_PULSEAUDIO}")
 message(STATUS "  - Profiling:\t\trequested: ${PROFILING}, enabled: ${WITH_PROFILING}")

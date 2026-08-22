@@ -20,14 +20,16 @@
 
 #include "config.h"
 
-#if defined WITH_BCM_VC && !defined __arm__
+#if defined WITH_BCM_VC && !defined __arm__ && !defined HAVE_VC4_CMA
 #error Broadcom VideoCore support can only be enabled on ARM builds
 #endif
 
-// From this point we may safely assume that WITH_BCM_VC implies __arm__
-
 #ifdef WITH_BCM_VC
+#ifdef HAVE_VC4_CMA
+#include "hello_fft/gpu_fft_v4cma.h"
+#else
 #include "hello_fft/gpu_fft.h"
+#endif
 #include "hello_fft/mailbox.h"
 #else
 #include <memory>
@@ -318,7 +320,7 @@ void* demodulate(void* params) {
     // initialize fft engine
 #ifdef WITH_BCM_VC
     int mb = mbox_open();
-    struct GPU_FFT* fft;
+    struct GPU_FFT* fft = NULL;
     int ret = gpu_fft_prepare(mb, fft_size_log, GPU_FFT_FWD, FFT_BATCH, &fft);
     switch (ret) {
         case -1:
@@ -388,6 +390,9 @@ void* demodulate(void* params) {
 #ifdef WITH_BCM_VC
             log(LOG_INFO, "Freeing GPU memory\n");
             gpu_fft_release(fft);
+#ifdef HAVE_VC4_CMA
+            mbox_close(mb);
+#endif
 #endif /* WITH_BCM_VC */
             return NULL;
         }
@@ -794,13 +799,13 @@ int main(int argc, char* argv[]) {
     // If executing other than as root, GPU memory gets alloc'd and the
     // 'permission denied' message on /dev/mem kills rtl_airband without
     // releasing GPU memory.
-#ifdef WITH_BCM_VC
+#if defined WITH_BCM_VC && !defined HAVE_VC4_CMA
     // XXX should probably do this check in other circumstances also.
     if (0 != getuid()) {
         cerr << "FFT library requires that rtl_airband be executed as root\n";
         exit(1);
     }
-#endif /* WITH_BCM_VC */
+#endif
 
     // read config
     try {
@@ -833,10 +838,10 @@ int main(int argc, char* argv[]) {
         if (root.exists("localtime") && (bool)root["localtime"] == true)
             use_localtime = true;
         if (root.exists("multiple_demod_threads") && (bool)root["multiple_demod_threads"] == true) {
-#ifdef WITH_BCM_VC
+#if defined WITH_BCM_VC && !defined HAVE_VC4_CMA
             cerr << "Using multiple_demod_threads not supported with BCM VideoCore for FFT\n";
             exit(1);
-#endif /* WITH_BCM_VC */
+#endif
 
             multiple_demod_threads = true;
         }

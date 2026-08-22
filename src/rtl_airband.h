@@ -34,7 +34,11 @@
 #include "config.h"
 
 #ifdef WITH_BCM_VC
+#ifdef HAVE_VC4_CMA
+#include "hello_fft/gpu_fft_v4cma.h"
+#else
 #include "hello_fft/gpu_fft.h"
+#endif
 #else
 #include <fftw3.h>
 #endif /* WITH_BCM_VC */
