@@ -2,7 +2,6 @@
 #include "mailbox.h"
 #include "vcsm_cma_ioctl.h"
 
-#include <cerrno>
 #include <cstdint>
 #include <cstring>
 
@@ -18,6 +17,7 @@ namespace {
 
 constexpr const char* kCmaHeap = "/dev/dma_heap/linux,cma";
 constexpr const char* kVcsmCma = "/dev/vcsm-cma";
+static_assert(sizeof(struct vc_sm_cma_ioctl_import_dmabuf) == 64, "Unexpected VCSM CMA ioctl ABI");
 pthread_mutex_t qpu_mutex = PTHREAD_MUTEX_INITIALIZER;
 unsigned qpu_users = 0;
 
