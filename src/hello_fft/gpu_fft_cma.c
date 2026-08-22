@@ -2,7 +2,6 @@
 #include "mailbox.h"
 #include "vcsm_cma_ioctl.h"
 
-#include <cerrno>
 #include <cstdint>
 #include <cstring>
 
@@ -18,6 +17,7 @@ namespace {
 
 constexpr const char* kCmaHeap = "/dev/dma_heap/linux,cma";
 constexpr const char* kVcsmCma = "/dev/vcsm-cma";
+static_assert(sizeof(struct vc_sm_cma_ioctl_import_dmabuf) == 64, "Unexpected VCSM CMA ioctl ABI");
 pthread_mutex_t qpu_mutex = PTHREAD_MUTEX_INITIALIZER;
 unsigned qpu_users = 0;
 
@@ -58,14 +58,20 @@ void release_qpu(int mb) {
 }
 
 void release_allocation(struct GPU_FFT_BASE* base) {
+    int vcsm_import_fd = base->vcsm_import_fd;
     int vcsm_fd = base->vcsm_fd;
     int dma_buf_fd = base->dma_buf_fd;
     void* arm_map = base->arm_map;
     unsigned size = base->size;
 
+    base->vcsm_import_fd = -1;
     base->vcsm_fd = -1;
     base->dma_buf_fd = -1;
     base->arm_map = nullptr;
+
+    // The VCSM-imported dma-buf owns the VPU mapping. Release it before the
+    // userspace mapping and the original dma-heap fd are dropped.
+    close_fd(&vcsm_import_fd);
     if (arm_map != MAP_FAILED && arm_map != nullptr) {
         munmap(arm_map, size);
     }
@@ -98,11 +104,13 @@ int gpu_fft_alloc(int mb, unsigned size, struct GPU_FFT_PTR* ptr) {
     void* arm_map;
     int heap_fd;
     int ret = -4;
+    uint32_t vc_addr = 0;
+    uint32_t cache_alias = 0;
 
     if (acquire_qpu(mb) != 0)
         return -1;
 
-    heap_fd = open(kCmaHeap, O_RDONLY | O_CLOEXEC);
+    heap_fd = open(kCmaHeap, O_RDWR | O_CLOEXEC);
     if (heap_fd < 0)
         goto error_qpu;
 
@@ -129,21 +137,29 @@ int gpu_fft_alloc(int mb, unsigned size, struct GPU_FFT_PTR* ptr) {
     std::memset(&allocation_base, 0, sizeof(allocation_base));
     allocation_base.dma_buf_fd = allocation.fd;
     allocation_base.vcsm_fd = open(kVcsmCma, O_RDWR | O_CLOEXEC);
+    allocation_base.vcsm_import_fd = -1;
     allocation_base.arm_map = arm_map;
     allocation_base.size = size;
     if (allocation_base.vcsm_fd < 0)
         goto error_map;
     if (ioctl(allocation_base.vcsm_fd, VC_SM_CMA_IOCTL_MEM_IMPORT_DMABUF, &import) < 0)
         goto error_vcsm;
-    if (import.dma_addr > UINT32_MAX)
+
+    allocation_base.vcsm_import_fd = import.handle;
+    allocation_base.handle = import.vc_handle;
+    if (allocation_base.vcsm_import_fd < 0 || import.dma_addr > UINT32_MAX || import.size < size)
         goto error_vcsm;
     if (sync_dma_buf(allocation.fd, DMA_BUF_SYNC_RW | DMA_BUF_SYNC_START) < 0)
         goto error_vcsm;
 
+    vc_addr = static_cast<uint32_t>(import.dma_addr);
+    cache_alias = vc_addr & 0xC0000000U;
+    if (cache_alias != 0xC0000000U && cache_alias != 0x80000000U)
+        vc_addr |= 0xC0000000U;
+
     allocation_base.mb = mb;
-    allocation_base.handle = static_cast<unsigned>(import.handle);
     *reinterpret_cast<struct GPU_FFT_BASE*>(arm_map) = allocation_base;
-    ptr->vc = static_cast<unsigned>(import.dma_addr);
+    ptr->vc = vc_addr;
     ptr->arm.vptr = arm_map;
     return 0;
 
