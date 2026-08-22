@@ -1,0 +1,32 @@
+name: Vulkan Platform Build
+
+on:
+  push:
+    branches: [vulkan-dev]
+  pull_request:
+    branches: [vulkan-dev]
+  workflow_dispatch:
+
+jobs:
+  vulkan_build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: '0'
+
+      - name: Install project dependencies
+        run: .github/install_dependencies
+
+      - name: Install Vulkan build dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y libvulkan-dev glslang-tools
+
+      - name: Configure Vulkan platform
+        run: cmake -B builds/vulkan -DCMAKE_BUILD_TYPE=Release -DPLATFORM=vulkan -S .
+
+      - name: Build Vulkan platform
+        run: cmake --build builds/vulkan -j$(nproc)
