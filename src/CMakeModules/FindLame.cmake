@@ -15,21 +15,3 @@ ELSE(LAME_FOUND)
 		MESSAGE(FATAL_ERROR "lame library required but not found")
 	ENDIF (Lame_FIND_REQUIRED)
 ENDIF(LAME_FOUND)
-
-# PLATFORM=vulkan is intentionally portable, but on native Raspberry Pi systems
-# with VideoCore IV the dedicated AArch64 v4cma backend is normally preferable.
-# Keep this advisory: an explicit Vulkan selection must never be rejected.
-include(${CMAKE_CURRENT_LIST_DIR}/detect_vc4.cmake)
-if(RTL_AIRBAND_VC4_SYSTEM)
-	if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.19")
-		function(rtl_airband_add_vc4_vulkan_notice)
-			add_custom_command(TARGET rtl_airband POST_BUILD
-				COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --yellow
-					"WARNING: ${RTL_AIRBAND_VC4_HINT}"
-				VERBATIM)
-		endfunction()
-		cmake_language(DEFER CALL rtl_airband_add_vc4_vulkan_notice)
-	else()
-		message(WARNING "${RTL_AIRBAND_VC4_HINT}")
-	endif()
-endif()
