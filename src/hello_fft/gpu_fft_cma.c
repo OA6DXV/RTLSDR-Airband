@@ -9,6 +9,7 @@
 #include <fcntl.h>
 #include <linux/dma-buf.h>
 #include <linux/dma-heap.h>
+#include <pthread.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -17,6 +18,8 @@ namespace {
 
 constexpr const char* kCmaHeap = "/dev/dma_heap/linux,cma";
 constexpr const char* kVcsmCma = "/dev/vcsm-cma";
+pthread_mutex_t qpu_mutex = PTHREAD_MUTEX_INITIALIZER;
+unsigned qpu_users = 0;
 
 void close_fd(int* fd) {
     if (*fd >= 0) {
@@ -31,6 +34,27 @@ int sync_dma_buf(int fd, __u64 flags) {
     std::memset(&sync, 0, sizeof(sync));
     sync.flags = flags;
     return ioctl(fd, DMA_BUF_IOCTL_SYNC, &sync);
+}
+
+int acquire_qpu(int mb) {
+    int ret = 0;
+
+    pthread_mutex_lock(&qpu_mutex);
+    if (qpu_users == 0 && qpu_enable(mb, 1) != 0) {
+        ret = -1;
+    } else {
+        qpu_users++;
+    }
+    pthread_mutex_unlock(&qpu_mutex);
+    return ret;
+}
+
+void release_qpu(int mb) {
+    pthread_mutex_lock(&qpu_mutex);
+    if (qpu_users > 0 && --qpu_users == 0) {
+        qpu_enable(mb, 0);
+    }
+    pthread_mutex_unlock(&qpu_mutex);
 }
 
 void release_allocation(struct GPU_FFT_BASE* base) {
@@ -52,9 +76,18 @@ void release_allocation(struct GPU_FFT_BASE* base) {
 }
 
 unsigned gpu_fft_base_exec(struct GPU_FFT_BASE* base, unsigned num_qpus) {
-    sync_dma_buf(base->dma_buf_fd, DMA_BUF_SYNC_RW | DMA_BUF_SYNC_END);
-    unsigned ret = execute_qpu(base->mb, num_qpus, base->vc_msg, 1, 2000);
-    sync_dma_buf(base->dma_buf_fd, DMA_BUF_SYNC_RW | DMA_BUF_SYNC_START);
+    unsigned ret;
+
+    pthread_mutex_lock(&qpu_mutex);
+    if (sync_dma_buf(base->dma_buf_fd, DMA_BUF_SYNC_RW | DMA_BUF_SYNC_END) < 0) {
+        ret = GPU_FFT_ERROR_SYNC_DEVICE;
+    } else {
+        ret = execute_qpu(base->mb, num_qpus, base->vc_msg, 1, 2000);
+        if (sync_dma_buf(base->dma_buf_fd, DMA_BUF_SYNC_RW | DMA_BUF_SYNC_START) < 0 && ret == 0) {
+            ret = GPU_FFT_ERROR_SYNC_CPU;
+        }
+    }
+    pthread_mutex_unlock(&qpu_mutex);
     return ret;
 }
 
@@ -66,7 +99,7 @@ int gpu_fft_alloc(int mb, unsigned size, struct GPU_FFT_PTR* ptr) {
     int heap_fd;
     int ret = -4;
 
-    if (qpu_enable(mb, 1) != 0)
+    if (acquire_qpu(mb) != 0)
         return -1;
 
     heap_fd = open(kCmaHeap, O_RDONLY | O_CLOEXEC);
@@ -125,7 +158,7 @@ error_dma_buf:
 error_heap:
     close(heap_fd);
 error_qpu:
-    qpu_enable(mb, 0);
+    release_qpu(mb);
     return ret;
 }
 
@@ -133,7 +166,7 @@ void gpu_fft_base_release(struct GPU_FFT_BASE* base) {
     const int mb = base->mb;
 
     release_allocation(base);
-    qpu_enable(mb, 0);
+    release_qpu(mb);
 }
 
 unsigned gpu_fft_ptr_inc(struct GPU_FFT_PTR* ptr, int bytes) {

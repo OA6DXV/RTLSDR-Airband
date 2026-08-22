@@ -335,6 +335,12 @@ void* demodulate(void* params) {
             log(LOG_CRIT, "Out of memory. Try a smaller batch or increase GPU memory.\n");
             error();
             break;
+#ifdef HAVE_VC4_CMA
+        case -4:
+            log(LOG_CRIT, "Unable to initialize the VideoCore CMA backend.\n");
+            error();
+            break;
+#endif
     }
 #else
     fftwf_complex* fftin = demod_params->fftin;
@@ -486,7 +492,16 @@ void* demodulate(void* params) {
         }
 
 #ifdef WITH_BCM_VC
+#ifdef HAVE_VC4_CMA
+        unsigned fft_ret = gpu_fft_execute(fft);
+        if (fft_ret != 0) {
+            log(LOG_CRIT, "VideoCore FFT execution failed: 0x%08x\n", fft_ret);
+            do_exit = 1;
+            continue;
+        }
+#else
         gpu_fft_execute(fft);
+#endif
 #else
         fftwf_execute(demod_params->fft);
 #endif /* WITH_BCM_VC */

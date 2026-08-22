@@ -5,6 +5,8 @@
 #define GPU_FFT_PI 3.14159265358979323846
 #define GPU_FFT_FWD 0
 #define GPU_FFT_REV 1
+#define GPU_FFT_ERROR_SYNC_DEVICE 0xfffffffeU
+#define GPU_FFT_ERROR_SYNC_CPU 0xfffffffdU
 
 struct GPU_FFT_COMPLEX {
     float re, im;
