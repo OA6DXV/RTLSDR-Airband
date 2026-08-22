@@ -1,4 +1,11 @@
 /* SPDX-License-Identifier: GPL-2.0 */
+
+/*
+ * Copyright 2019 Raspberry Pi (Trading) Ltd.  All rights reserved.
+ *
+ * Based on vmcs_sm_ioctl.h Copyright Broadcom Corporation.
+ */
+
 #ifndef RTL_AIRBAND_VCSM_CMA_IOCTL_H
 #define RTL_AIRBAND_VCSM_CMA_IOCTL_H
 
