@@ -28,7 +28,11 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <math.h>
 
+#ifdef HAVE_VC4_CMA
+#include "gpu_fft_v4cma.h"
+#else
 #include "gpu_fft.h"
+#endif
 
 #define ALPHA(dx) (2 * pow(sin((dx) / 2), 2))
 #define BETA(dx) (sin(dx))
