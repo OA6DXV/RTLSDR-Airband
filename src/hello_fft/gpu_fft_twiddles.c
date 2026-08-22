@@ -175,33 +175,32 @@ static void twiddles_32k(double two_pi, float* out) {
     double N = 32768;
     int q;
 
-    out = twiddles_base_64(two_pi, out);
-    out = twiddles_step_32(two_pi, out, two_pi / N * 16);
-    out = twiddles_step_16(two_pi, out, two_pi / N * GPU_FFT_QPUS);
+    out = twiddles_base_32(two_pi, out, 0);
+    out = twiddles_step_32(two_pi, out, two_pi / N * 32);
+    out = twiddles_step_32(two_pi, out, two_pi / N * GPU_FFT_QPUS);
 
     for (q = 0; q < GPU_FFT_QPUS; q++)
-        out = twiddles_base_16(two_pi, out, two_pi / N * q);
+        out = twiddles_base_32(two_pi, out, two_pi / N * q);
 }
 
 static void twiddles_64k(double two_pi, float* out) {
     double N = 65536;
     int q;
 
-    out = twiddles_base_16(two_pi, out, 0);
-    out = twiddles_step_16(two_pi, out, two_pi / N * 256);
-    out = twiddles_step_16(two_pi, out, two_pi / N * 16);
-    out = twiddles_step_16(two_pi, out, two_pi / N * GPU_FFT_QPUS);
+    out = twiddles_base_64(two_pi, out);
+    out = twiddles_step_32(two_pi, out, two_pi / N * 32);
+    out = twiddles_step_32(two_pi, out, two_pi / N * GPU_FFT_QPUS);
 
     for (q = 0; q < GPU_FFT_QPUS; q++)
-        out = twiddles_base_16(two_pi, out, two_pi / N * q);
+        out = twiddles_base_32(two_pi, out, two_pi / N * q);
 }
 
 static void twiddles_128k(double two_pi, float* out) {
-    double N = 131072;
+    double N = 128 * 1024;
     int q;
 
     out = twiddles_base_32(two_pi, out, 0);
-    out = twiddles_step_16(two_pi, out, two_pi / N * 256);
+    out = twiddles_step_16(two_pi, out, two_pi / N * 16 * 16);
     out = twiddles_step_16(two_pi, out, two_pi / N * 16);
     out = twiddles_step_16(two_pi, out, two_pi / N * GPU_FFT_QPUS);
 
@@ -210,80 +209,74 @@ static void twiddles_128k(double two_pi, float* out) {
 }
 
 static void twiddles_256k(double two_pi, float* out) {
-    double N = 262144;
+    double N = 256 * 1024;
     int q;
 
     out = twiddles_base_32(two_pi, out, 0);
-    out = twiddles_step_32(two_pi, out, two_pi / N * 256);
-    out = twiddles_step_16(two_pi, out, two_pi / N * 16);
-    out = twiddles_step_16(two_pi, out, two_pi / N * GPU_FFT_QPUS);
+    out = twiddles_step_16(two_pi, out, two_pi / N * 32 * 16);
+    out = twiddles_step_16(two_pi, out, two_pi / N * 32);
+    out = twiddles_step_32(two_pi, out, two_pi / N * GPU_FFT_QPUS);
 
     for (q = 0; q < GPU_FFT_QPUS; q++)
-        out = twiddles_base_16(two_pi, out, two_pi / N * q);
+        out = twiddles_base_32(two_pi, out, two_pi / N * q);
 }
 
 static void twiddles_512k(double two_pi, float* out) {
-    double N = 524288;
-    int q;
-
-    out = twiddles_base_64(two_pi, out);
-    out = twiddles_step_32(two_pi, out, two_pi / N * 256);
-    out = twiddles_step_16(two_pi, out, two_pi / N * 16);
-    out = twiddles_step_16(two_pi, out, two_pi / N * GPU_FFT_QPUS);
-
-    for (q = 0; q < GPU_FFT_QPUS; q++)
-        out = twiddles_base_16(two_pi, out, two_pi / N * q);
-}
-
-static void twiddles_1024k(double two_pi, float* out) {
-    double N = 1048576;
-    int q;
-
-    out = twiddles_base_16(two_pi, out, 0);
-    out = twiddles_step_16(two_pi, out, two_pi / N * 4096);
-    out = twiddles_step_16(two_pi, out, two_pi / N * 256);
-    out = twiddles_step_16(two_pi, out, two_pi / N * 16);
-    out = twiddles_step_16(two_pi, out, two_pi / N * GPU_FFT_QPUS);
-
-    for (q = 0; q < GPU_FFT_QPUS; q++)
-        out = twiddles_base_16(two_pi, out, two_pi / N * q);
-}
-
-static void twiddles_2048k(double two_pi, float* out) {
-    double N = 2097152;
+    double N = 512 * 1024;
     int q;
 
     out = twiddles_base_32(two_pi, out, 0);
-    out = twiddles_step_16(two_pi, out, two_pi / N * 4096);
-    out = twiddles_step_16(two_pi, out, two_pi / N * 256);
-    out = twiddles_step_16(two_pi, out, two_pi / N * 16);
-    out = twiddles_step_16(two_pi, out, two_pi / N * GPU_FFT_QPUS);
+    out = twiddles_step_16(two_pi, out, two_pi / N * 32 * 32);
+    out = twiddles_step_32(two_pi, out, two_pi / N * 32);
+    out = twiddles_step_32(two_pi, out, two_pi / N * GPU_FFT_QPUS);
 
     for (q = 0; q < GPU_FFT_QPUS; q++)
-        out = twiddles_base_16(two_pi, out, two_pi / N * q);
+        out = twiddles_base_32(two_pi, out, two_pi / N * q);
+}
+
+static void twiddles_1024k(double two_pi, float* out) {
+    double N = 1024 * 1024;
+    int q;
+
+    out = twiddles_base_32(two_pi, out, 0);
+    out = twiddles_step_32(two_pi, out, two_pi / N * 32 * 32);
+    out = twiddles_step_32(two_pi, out, two_pi / N * 32);
+    out = twiddles_step_32(two_pi, out, two_pi / N * GPU_FFT_QPUS);
+
+    for (q = 0; q < GPU_FFT_QPUS; q++)
+        out = twiddles_base_32(two_pi, out, two_pi / N * q);
+}
+
+static void twiddles_2048k(double two_pi, float* out) {
+    double N = 2048 * 1024;
+    int q;
+
+    out = twiddles_base_64(two_pi, out);
+    out = twiddles_step_32(two_pi, out, two_pi / N * 32 * 32);
+    out = twiddles_step_32(two_pi, out, two_pi / N * 32);
+    out = twiddles_step_32(two_pi, out, two_pi / N * GPU_FFT_QPUS);
+
+    for (q = 0; q < GPU_FFT_QPUS; q++)
+        out = twiddles_base_32(two_pi, out, two_pi / N * q);
 }
 
 /****************************************************************************/
 
-static void (*twiddles[])(double, float*) = {twiddles_256,  twiddles_512,  twiddles_1k,    twiddles_2k,    twiddles_4k,   twiddles_8k,   twiddles_16k,
-                                            twiddles_32k,  twiddles_64k,  twiddles_128k,  twiddles_256k,  twiddles_512k, twiddles_1024k, twiddles_2048k};
-
-void gpu_fft_twiddle_data(int log2_N, int direction, float* out) {
-    double two_pi = 2 * GPU_FFT_PI;
-    if (direction == GPU_FFT_FWD)
-        two_pi = -two_pi;
-    twiddles[log2_N - 8](two_pi, out);
-}
+static struct {
+    int passes, shared, unique;
+    void (*twiddles)(double, float*);
+} shaders[] = {{2, 2, 1, twiddles_256}, {2, 3, 1, twiddles_512}, {2, 4, 2, twiddles_1k},   {2, 6, 2, twiddles_2k},   {3, 3, 1, twiddles_4k},   {3, 4, 1, twiddles_8k},    {3, 5, 1, twiddles_16k},
+               {3, 6, 2, twiddles_32k}, {3, 8, 2, twiddles_64k}, {4, 5, 1, twiddles_128k}, {4, 6, 2, twiddles_256k}, {4, 7, 2, twiddles_512k}, {4, 8, 2, twiddles_1024k}, {4, 10, 2, twiddles_2048k}};
 
 int gpu_fft_twiddle_size(int log2_N, int* shared, int* unique, int* passes) {
-    static int s[] = {1, 2, 3, 5, 6, 7, 9, 10, 11, 12, 14, 15, 16, 17};
-    static int u[] = {1, 1, 2, 2, 1, 1, 1, 1, 1, 2, 2, 1, 1, 1};
-    static int p[] = {2, 2, 2, 2, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5};
-
     if (log2_N < 8 || log2_N > 21)
         return -1;
-    *shared = s[log2_N - 8];
-    *unique = u[log2_N - 8];
-    *passes = p[log2_N - 8];
+    *shared = shaders[log2_N - 8].shared;
+    *unique = shaders[log2_N - 8].unique;
+    *passes = shaders[log2_N - 8].passes;
     return 0;
+}
+
+void gpu_fft_twiddle_data(int log2_N, int direction, float* out) {
+    shaders[log2_N - 8].twiddles((direction == GPU_FFT_FWD ? -2 : 2) * GPU_FFT_PI, out);
 }
