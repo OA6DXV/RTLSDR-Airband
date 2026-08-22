@@ -6,14 +6,17 @@ set(RTL_AIRBAND_VC4_HINT "")
 
 if(PLATFORM STREQUAL "vulkan" AND CMAKE_SYSTEM_NAME STREQUAL "Linux"
 		AND NOT CMAKE_CROSSCOMPILING AND EXISTS "/proc/device-tree/compatible")
-	file(READ "/proc/device-tree/compatible" RTL_AIRBAND_DT_COMPATIBLE HEX)
-	# Device-tree strings are NUL separated. Match the Broadcom SoCs used by
-	# Raspberry Pi generations with VideoCore IV. Do not match bcm2711 (Pi 4,
-	# VideoCore VI) or newer SoCs.
-	string(TOLOWER "${RTL_AIRBAND_DT_COMPATIBLE}" RTL_AIRBAND_DT_COMPATIBLE_HEX)
-	foreach(RTL_AIRBAND_VC4_COMPAT "brcm,bcm2835" "brcm,bcm2836" "brcm,bcm2837")
-		string(HEX "${RTL_AIRBAND_VC4_COMPAT}" RTL_AIRBAND_VC4_COMPAT_HEX)
-		string(TOLOWER "${RTL_AIRBAND_VC4_COMPAT_HEX}" RTL_AIRBAND_VC4_COMPAT_HEX)
+	file(READ "/proc/device-tree/compatible" RTL_AIRBAND_DT_COMPATIBLE_HEX HEX)
+	string(TOLOWER "${RTL_AIRBAND_DT_COMPATIBLE_HEX}" RTL_AIRBAND_DT_COMPATIBLE_HEX)
+
+	# Device-tree strings are NUL separated. These are the hexadecimal forms of
+	# brcm,bcm2835 / brcm,bcm2836 / brcm,bcm2837, the SoCs used by Raspberry Pi
+	# generations with VideoCore IV. bcm2711 (Pi 4 / VideoCore VI) is deliberately
+	# not included.
+	foreach(RTL_AIRBAND_VC4_COMPAT_HEX
+			"6272636d2c62636d32383335"
+			"6272636d2c62636d32383336"
+			"6272636d2c62636d32383337")
 		string(FIND "${RTL_AIRBAND_DT_COMPATIBLE_HEX}" "${RTL_AIRBAND_VC4_COMPAT_HEX}" RTL_AIRBAND_VC4_MATCH)
 		if(NOT RTL_AIRBAND_VC4_MATCH EQUAL -1)
 			set(RTL_AIRBAND_VC4_SYSTEM TRUE)
