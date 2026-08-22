@@ -22,10 +22,13 @@ ENDIF(LAME_FOUND)
 include(${CMAKE_CURRENT_LIST_DIR}/detect_vc4.cmake)
 if(RTL_AIRBAND_VC4_SYSTEM)
 	if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.19")
-		function(rtl_airband_vc4_vulkan_notice)
-			message(WARNING "${RTL_AIRBAND_VC4_HINT}")
+		function(rtl_airband_add_vc4_vulkan_notice)
+			add_custom_command(TARGET rtl_airband POST_BUILD
+				COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --yellow
+					"WARNING: ${RTL_AIRBAND_VC4_HINT}"
+				VERBATIM)
 		endfunction()
-		cmake_language(DEFER CALL rtl_airband_vc4_vulkan_notice)
+		cmake_language(DEFER CALL rtl_airband_add_vc4_vulkan_notice)
 	else()
 		message(WARNING "${RTL_AIRBAND_VC4_HINT}")
 	endif()
