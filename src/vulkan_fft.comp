@@ -32,9 +32,9 @@ void bit_reverse_pass(uint index) {
         return;
 
     uint batch = index / params.fft_size;
-    uint sample = index - batch * params.fft_size;
+    uint sample_index = index - batch * params.fft_size;
     uint bits = uint(findMSB(params.fft_size));
-    uint reversed = bitfieldReverse(sample) >> (32u - bits);
+    uint reversed = bitfieldReverse(sample_index) >> (32u - bits);
 
     output_buffer.value[batch * params.fft_size + reversed] = input_buffer.value[index];
 }
