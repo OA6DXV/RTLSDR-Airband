@@ -113,6 +113,7 @@ set(CMAKE_REQUIRED_LINK_OPTIONS ${CMAKE_REQUIRED_LINK_OPTIONS_SAVE})
 option(NFM "Enable support for narrow FM channels" OFF)
 
 set(PLATFORM "native" CACHE STRING "Optimize the build for the given hardware platform")
+include(detect_acceleration)
 
 option(RTLSDR "Enable RTL-SDR support" ON)
 set(WITH_RTLSDR FALSE)
@@ -187,17 +188,13 @@ if(PROFILING)
 	endif()
 endif()
 
-
 option(BCM_VC "Enable Broadcom Videocore 3 support" OFF)
 set(WITH_BCM_VC FALSE)
 set(VC4_CMA FALSE)
 set(WITH_VULKAN FALSE)
 
-# error out on depricated PLATFORM values
 if(PLATFORM STREQUAL "rpiv1" OR PLATFORM STREQUAL "armv7-generic" OR PLATFORM STREQUAL "armv8-generic")
 	message(FATAL_ERROR "platform '${PLATFORM}' has been deprecated, see https://github.com/rtl-airband/RTLSDR-Airband/discussions/447")
-# rpiv2 - Raspberry Pi 2 or Raspberry Pi 3 using Broadcom VideoCore IV GPU for FFT
-# NOTE: use 'native' to not use the GPU for FFT
 elseif(PLATFORM STREQUAL "rpiv2")
 	set(BCM_VC ON)
 	add_compile_options(-march=armv7-a -mfpu=neon-vfpv4 -mfloat-abi=hard)
@@ -268,7 +265,6 @@ elseif(PLATFORM STREQUAL "vulkan")
 	list(APPEND rtl_airband_extra_sources vulkan_fft.cpp ${VULKAN_SHADER_HEADER})
 	list(APPEND rtl_airband_extra_libs ${VULKAN_LIBRARY})
 	list(APPEND rtl_airband_include_dirs ${VULKAN_INCLUDE_DIR})
-# native - let the complier optimize to run on local hardware (default)
 elseif(PLATFORM STREQUAL "native")
 	CHECK_CXX_COMPILER_FLAG(-march=native CXX_HAS_MARCH_NATIVE)
 	if(CXX_HAS_MARCH_NATIVE)
@@ -276,15 +272,12 @@ elseif(PLATFORM STREQUAL "native")
 	else()
 		message(FATAL_ERROR "Cannot build with PLATFORM=native: the compiler does not support -march=native option")
 	endif()
-# generic - dont add any hardware related flags, used to build a "portable" binary
 elseif(PLATFORM STREQUAL "generic")
 	# NO-OP
-# error out on unrecongnnized PLATFORM value
 else()
 	message(FATAL_ERROR "Unknown platform '${PLATFORM}'. Valid options are: rpiv2, v4cma, vulkan, native, and generic")
 endif()
 
-# Try using VC GPU if enabled. Fallback to fftw3f if disabled.
 if(BCM_VC)
 	add_subdirectory(hello_fft)
 	list(APPEND rtl_airband_obj_files $<TARGET_OBJECTS:hello_fft>)
@@ -365,7 +358,7 @@ add_library (rtl_airband_base OBJECT
 	)
 
 target_include_directories (rtl_airband_base PUBLIC
-	${CMAKE_CURRENT_BINARY_DIR} # needed for config.h
+	${CMAKE_CURRENT_BINARY_DIR}
 	${rtl_airband_include_dirs}
 )
 
@@ -373,15 +366,36 @@ if(CXX_HAS_FFAST_MATH)
     target_compile_options(rtl_airband_base PRIVATE -ffast-math)
 endif()
 
-# can't do this per target with cmake <3.13
 link_directories(${link_dirs})
-
 list(APPEND rtl_airband_obj_files $<TARGET_OBJECTS:rtl_airband_base>)
 
 add_executable (rtl_airband ${rtl_airband_obj_files})
 set_property(TARGET rtl_airband PROPERTY ENABLE_EXPORTS 1)
 
-# add include for config.h
+if(RTL_AIRBAND_ACCEL_HINTS AND (PLATFORM STREQUAL "native" OR PLATFORM STREQUAL "generic"))
+	add_custom_command(TARGET rtl_airband POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E echo ""
+		COMMAND ${CMAKE_COMMAND} -E echo "RTLSDR-Airband acceleration recommendations:"
+		VERBATIM)
+	foreach(RTL_AIRBAND_ACCEL_HINT IN LISTS RTL_AIRBAND_ACCEL_HINTS)
+		add_custom_command(TARGET rtl_airband POST_BUILD
+			COMMAND ${CMAKE_COMMAND} -E echo "WARNING: ${RTL_AIRBAND_ACCEL_HINT}"
+			VERBATIM)
+	endforeach()
+	add_custom_command(TARGET rtl_airband POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E echo "Selected PLATFORM=${PLATFORM} is unchanged."
+		VERBATIM)
+elseif(PLATFORM STREQUAL "vulkan" AND RTL_AIRBAND_VC4_SYSTEM)
+	if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+		set(RTL_AIRBAND_SELECTED_PLATFORM_HINT "VideoCore IV detected on a 64-bit ARM userspace: PLATFORM=v4cma is recommended for the dedicated VC4 CMA/QPU backend; PLATFORM=vulkan remains enabled as requested.")
+	else()
+		set(RTL_AIRBAND_SELECTED_PLATFORM_HINT "VideoCore IV detected: PLATFORM=rpiv2 is the dedicated 32-bit VC4 backend; PLATFORM=vulkan remains enabled as requested.")
+	endif()
+	add_custom_command(TARGET rtl_airband POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E echo "WARNING: ${RTL_AIRBAND_SELECTED_PLATFORM_HINT}"
+		VERBATIM)
+endif()
+
 target_include_directories (rtl_airband PUBLIC
 	${CMAKE_CURRENT_BINARY_DIR}
 )
@@ -397,30 +411,19 @@ install(TARGETS rtl_airband
 	RUNTIME DESTINATION bin
 )
 
-# TODO: install config if not present
-
-
 if(BUILD_UNITTESTS)
 	cmake_minimum_required(VERSION 3.1...3.18 FATAL_ERROR)
-
-	# GoogleTest requires at least C++14
 	set(CMAKE_CXX_STANDARD 14)
-
-	# set timestamps of URL extracted files to the extraction time
 	if(POLICY CMP0135)
 		cmake_policy(SET CMP0135 NEW)
 	endif()
-
-	# pull in GoogleTest as a dependency
 	include(FetchContent)
 	FetchContent_Declare(
 		googletest
 		URL https://github.com/google/googletest/archive/03597a01ee50ed33e9dfd640b249b4be3799d395.zip
 	)
 	FetchContent_MakeAvailable(googletest)
-
 	enable_testing()
-
 	file(GLOB_RECURSE TEST_FILES "test_*.cpp")
 	list(APPEND TEST_FILES
 		squelch.cpp
@@ -430,7 +433,6 @@ if(BUILD_UNITTESTS)
 		generate_signal.cpp
 		helper_functions.cpp
 	)
-
 	add_executable(
 		unittests
 		${TEST_FILES}
@@ -441,13 +443,9 @@ if(BUILD_UNITTESTS)
 		dl
 		${rtl_airband_extra_libs}
 	)
-
-	# add include for config.h
 	target_include_directories (unittests PUBLIC
 		${CMAKE_CURRENT_BINARY_DIR}
 	)
-
 	include(GoogleTest)
 	gtest_discover_tests(unittests)
-
 endif()
