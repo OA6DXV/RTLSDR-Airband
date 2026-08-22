@@ -39,6 +39,8 @@
 #else
 #include "hello_fft/gpu_fft.h"
 #endif
+#elif defined WITH_VULKAN
+#include "vulkan_fft.h"
 #else
 #include <fftw3.h>
 #endif /* WITH_BCM_VC */
@@ -96,6 +98,8 @@ struct sample_fft_arg {
 extern "C" void samplefft(sample_fft_arg* a, unsigned char* buffer, float* window, float* levels);
 
 #define FFT_BATCH 250
+#elif defined WITH_VULKAN
+#define FFT_BATCH 32
 #else
 #define FFT_BATCH 1
 #endif /* WITH_BCM_VC */
@@ -332,11 +336,11 @@ struct demod_params_t {
     int device_start;
     int device_end;
 
-#ifndef WITH_BCM_VC
+#if !defined WITH_BCM_VC && !defined WITH_VULKAN
     fftwf_plan fft;
     fftwf_complex* fftin;
     fftwf_complex* fftout;
-#endif /* WITH_BCM_VC */
+#endif
 };
 
 struct output_params_t {
@@ -415,7 +419,7 @@ void udp_stream_shutdown(udp_stream_data* sdata);
 void pulse_init();
 int pulse_setup(pulse_data* pdata, mix_modes mixmode);
 void pulse_start();
-void pulse_shutdown(pulse_data* pdata);
+void pulse_shutdown();
 void pulse_write_stream(pulse_data* pdata, mix_modes mode, const float* data_left, const float* data_right, size_t len);
 #endif /* WITH_PULSEAUDIO */
 
