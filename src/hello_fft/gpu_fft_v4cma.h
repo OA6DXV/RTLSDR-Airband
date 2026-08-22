@@ -29,6 +29,7 @@ struct GPU_FFT_BASE {
     volatile unsigned* peri;
     int dma_buf_fd;
     int vcsm_fd;
+    int vcsm_import_fd;
     void* arm_map;
 };
 
