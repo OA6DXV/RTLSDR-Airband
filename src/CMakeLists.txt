@@ -113,6 +113,7 @@ set(CMAKE_REQUIRED_LINK_OPTIONS ${CMAKE_REQUIRED_LINK_OPTIONS_SAVE})
 option(NFM "Enable support for narrow FM channels" OFF)
 
 set(PLATFORM "native" CACHE STRING "Optimize the build for the given hardware platform")
+include(detect_acceleration)
 
 option(RTLSDR "Enable RTL-SDR support" ON)
 set(WITH_RTLSDR FALSE)
@@ -157,7 +158,7 @@ if(SOAPYSDR)
 	if(SoapySDR_FOUND)
 		list(APPEND rtl_airband_extra_sources input-soapysdr.cpp)
 		message(STATUS "  SoapySDR found, ${SoapySDR_INCLUDE_DIRS}, ${SoapySDR_LIBRARIES}")
-		list(APPEND rtl_airband_extra_libs ${SoapySDR_LIBRARIES})
+		list(APPEND rtl_airband_extra_libs ${SOAPYSDR_LIBRARIES})
 		list(APPEND rtl_airband_include_dirs ${SoapySDR_INCLUDE_DIRS})
 		set(WITH_SOAPYSDR TRUE)
 	else()
@@ -332,6 +333,24 @@ list(APPEND rtl_airband_obj_files $<TARGET_OBJECTS:rtl_airband_base>)
 
 add_executable (rtl_airband ${rtl_airband_obj_files})
 set_property(TARGET rtl_airband PROPERTY ENABLE_EXPORTS 1)
+
+if(RTL_AIRBAND_ACCEL_HINTS AND (PLATFORM STREQUAL "native" OR PLATFORM STREQUAL "generic"))
+	add_custom_command(TARGET rtl_airband POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E echo ""
+		COMMAND ${CMAKE_COMMAND} -E echo "RTLSDR-Airband acceleration recommendations:"
+		VERBATIM
+	)
+	foreach(RTL_AIRBAND_ACCEL_HINT IN LISTS RTL_AIRBAND_ACCEL_HINTS)
+		add_custom_command(TARGET rtl_airband POST_BUILD
+			COMMAND ${CMAKE_COMMAND} -E echo "WARNING: ${RTL_AIRBAND_ACCEL_HINT}"
+			VERBATIM
+		)
+	endforeach()
+	add_custom_command(TARGET rtl_airband POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E echo "Selected PLATFORM=${PLATFORM} is unchanged."
+		VERBATIM
+	)
+endif()
 
 # add include for config.h
 target_include_directories (rtl_airband PUBLIC
