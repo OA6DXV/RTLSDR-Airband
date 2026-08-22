@@ -70,6 +70,7 @@ jobs:
                 build-essential \
                 ca-certificates \
                 cmake \
+                file \
                 git \
                 glslang-tools \
                 libconfig++-dev \
@@ -79,6 +80,7 @@ jobs:
                 libvulkan-dev \
                 pkg-config
               rm -rf /var/lib/apt/lists/*
+              git config --global --add safe.directory /work
               echo "Build architecture: $(dpkg --print-architecture)"
               uname -m
               cmake -B builds/vulkan-${{ matrix.arch }} \
