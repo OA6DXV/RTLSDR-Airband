@@ -419,7 +419,7 @@ void udp_stream_shutdown(udp_stream_data* sdata);
 void pulse_init();
 int pulse_setup(pulse_data* pdata, mix_modes mixmode);
 void pulse_start();
-void pulse_shutdown();
+void pulse_shutdown(pulse_data* pdata);
 void pulse_write_stream(pulse_data* pdata, mix_modes mode, const float* data_left, const float* data_right, size_t len);
 #endif /* WITH_PULSEAUDIO */
 
