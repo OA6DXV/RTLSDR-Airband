@@ -1,4 +1,11 @@
 /* SPDX-License-Identifier: GPL-2.0 */
+
+/*
+ * Copyright 2019 Raspberry Pi (Trading) Ltd.  All rights reserved.
+ *
+ * Based on vmcs_sm_ioctl.h Copyright Broadcom Corporation.
+ */
+
 #ifndef RTL_AIRBAND_VCSM_CMA_IOCTL_H
 #define RTL_AIRBAND_VCSM_CMA_IOCTL_H
 
@@ -31,8 +38,6 @@ struct vc_sm_cma_ioctl_import_dmabuf {
     __u64 dma_addr;
 };
 
-#define VC_SM_CMA_IOCTL_MEM_IMPORT_DMABUF \
-    _IOR(VC_SM_CMA_MAGIC_TYPE, VC_SM_CMA_CMD_IMPORT_DMABUF, \
-         struct vc_sm_cma_ioctl_import_dmabuf)
+#define VC_SM_CMA_IOCTL_MEM_IMPORT_DMABUF _IOR(VC_SM_CMA_MAGIC_TYPE, VC_SM_CMA_CMD_IMPORT_DMABUF, struct vc_sm_cma_ioctl_import_dmabuf)
 
 #endif
