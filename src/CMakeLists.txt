@@ -191,6 +191,7 @@ endif()
 option(BCM_VC "Enable Broadcom Videocore 3 support" OFF)
 set(WITH_BCM_VC FALSE)
 set(VC4_CMA FALSE)
+set(WITH_VULKAN FALSE)
 
 # error out on depricated PLATFORM values
 if(PLATFORM STREQUAL "rpiv1" OR PLATFORM STREQUAL "armv7-generic" OR PLATFORM STREQUAL "armv8-generic")
@@ -221,6 +222,52 @@ int main() { return 0; }
 	add_compile_options(-march=armv8-a)
 	add_compile_definitions(HAVE_VC4_CMA)
 	list(APPEND rtl_airband_extra_sources samplefft_v4cma.cpp)
+elseif(PLATFORM STREQUAL "vulkan")
+	set(WITH_VULKAN TRUE)
+
+	find_path(VULKAN_INCLUDE_DIR vulkan/vulkan.h)
+	find_library(VULKAN_LIBRARY NAMES vulkan)
+	if(NOT VULKAN_INCLUDE_DIR OR NOT VULKAN_LIBRARY)
+		message(FATAL_ERROR "PLATFORM=vulkan requires Vulkan headers and loader library")
+	endif()
+
+	find_program(VULKAN_GLSLC glslc)
+	find_program(VULKAN_GLSLANG_VALIDATOR glslangValidator)
+	if(NOT VULKAN_GLSLC AND NOT VULKAN_GLSLANG_VALIDATOR)
+		message(FATAL_ERROR "PLATFORM=vulkan requires glslc or glslangValidator to compile the FFT compute shader")
+	endif()
+
+	set(VULKAN_SHADER_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/vulkan_fft.comp")
+	set(VULKAN_SHADER_SPV "${CMAKE_CURRENT_BINARY_DIR}/vulkan_fft.spv")
+	set(VULKAN_SHADER_HEADER "${CMAKE_CURRENT_BINARY_DIR}/vulkan_fft_spv.h")
+	if(VULKAN_GLSLC)
+		add_custom_command(
+			OUTPUT ${VULKAN_SHADER_SPV}
+			COMMAND ${VULKAN_GLSLC} -O --target-env=vulkan1.1 -fshader-stage=compute
+				-o ${VULKAN_SHADER_SPV} ${VULKAN_SHADER_SOURCE}
+			DEPENDS ${VULKAN_SHADER_SOURCE}
+			VERBATIM
+		)
+	else()
+		add_custom_command(
+			OUTPUT ${VULKAN_SHADER_SPV}
+			COMMAND ${VULKAN_GLSLANG_VALIDATOR} -V --target-env vulkan1.1 -S comp
+				-o ${VULKAN_SHADER_SPV} ${VULKAN_SHADER_SOURCE}
+			DEPENDS ${VULKAN_SHADER_SOURCE}
+			VERBATIM
+		)
+	endif()
+	add_custom_command(
+		OUTPUT ${VULKAN_SHADER_HEADER}
+		COMMAND ${CMAKE_COMMAND} -DINPUT=${VULKAN_SHADER_SPV} -DOUTPUT=${VULKAN_SHADER_HEADER}
+			-P ${CMAKE_CURRENT_SOURCE_DIR}/CMakeModules/embed_binary.cmake
+		DEPENDS ${VULKAN_SHADER_SPV} ${CMAKE_CURRENT_SOURCE_DIR}/CMakeModules/embed_binary.cmake
+		VERBATIM
+	)
+	set_source_files_properties(${VULKAN_SHADER_HEADER} PROPERTIES GENERATED TRUE)
+	list(APPEND rtl_airband_extra_sources vulkan_fft.cpp ${VULKAN_SHADER_HEADER})
+	list(APPEND rtl_airband_extra_libs ${VULKAN_LIBRARY})
+	list(APPEND rtl_airband_include_dirs ${VULKAN_INCLUDE_DIR})
 # native - let the complier optimize to run on local hardware (default)
 elseif(PLATFORM STREQUAL "native")
 	CHECK_CXX_COMPILER_FLAG(-march=native CXX_HAS_MARCH_NATIVE)
@@ -234,7 +281,7 @@ elseif(PLATFORM STREQUAL "generic")
 	# NO-OP
 # error out on unrecongnnized PLATFORM value
 else()
-	message(FATAL_ERROR "Unknown platform '${PLATFORM}'. Valid options are: rpiv2, v4cma, native, and generic")
+	message(FATAL_ERROR "Unknown platform '${PLATFORM}'. Valid options are: rpiv2, v4cma, vulkan, native, and generic")
 endif()
 
 # Try using VC GPU if enabled. Fallback to fftw3f if disabled.
@@ -274,6 +321,7 @@ message(STATUS "- Other options:")
 message(STATUS "  - Platform:\t\t${PLATFORM}")
 message(STATUS "  - Build Unit Tests:\t${BUILD_UNITTESTS}")
 message(STATUS "  - Broadcom VideoCore GPU:\t${WITH_BCM_VC}")
+message(STATUS "  - Vulkan Compute FFT:\t${WITH_VULKAN}")
 message(STATUS "  - VideoCore IV CMA backend:\t${VC4_CMA}")
 message(STATUS "  - NFM support:\t\t${NFM}")
 message(STATUS "  - PulseAudio:\t\trequested: ${PULSEAUDIO}, enabled: ${WITH_PULSEAUDIO}")
