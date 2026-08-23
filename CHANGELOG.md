@@ -1,5 +1,10 @@
 # Changelog
 
+## vulkan-dev
+
+- Extended the Vulkan FFT backend to Vulkan 1.0 devices.
+- Serialized FFTW fallback planning for multi-threaded demodulation.
+
 ## gpu-dev
 
 - Added `PLATFORM=v4cma` for AArch64 Raspberry Pi systems using VideoCore IV FFT through CMA/DMA-BUF.

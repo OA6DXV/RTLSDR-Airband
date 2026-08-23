@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -18,7 +19,12 @@
 namespace {
 
 const double PI = 3.141592653589793238462643383279502884;
-const uint32_t MIN_VULKAN_API = VK_MAKE_VERSION(1, 1, 0);
+const uint32_t MIN_VULKAN_API = VK_MAKE_VERSION(1, 0, 0);
+
+std::mutex& fftw_planner_mutex() {
+    static std::mutex mutex;
+    return mutex;
+}
 
 std::string lower_string(const std::string& value) {
     std::string result(value);
@@ -191,8 +197,10 @@ struct VulkanFFT::Impl {
     }
 
     void destroy_fftw() {
-        if (fftw_plan != NULL)
+        if (fftw_plan != NULL) {
+            std::lock_guard<std::mutex> lock(fftw_planner_mutex());
             fftwf_destroy_plan(fftw_plan);
+        }
         if (fftw_input != NULL)
             fftwf_free(fftw_input);
         if (fftw_output != NULL)
@@ -389,9 +397,9 @@ struct VulkanFFT::Impl {
 
         if (best_device == VK_NULL_HANDLE) {
             if (requested.empty())
-                last_error = "No Vulkan 1.1+ non-CPU device with a compute queue was found";
+                last_error = "No Vulkan 1.0+ non-CPU device with a compute queue was found";
             else
-                last_error = "No Vulkan 1.1+ GPU matching RTL_AIRBAND_VULKAN_DEVICE has a compute queue";
+                last_error = "No Vulkan 1.0+ GPU matching RTL_AIRBAND_VULKAN_DEVICE has a compute queue";
             return false;
         }
 
@@ -715,8 +723,11 @@ struct VulkanFFT::Impl {
         }
 
         int transform_size = static_cast<int>(fft_size);
-        fftw_plan = fftwf_plan_many_dft(1, &transform_size, static_cast<int>(batch_size), reinterpret_cast<fftwf_complex*>(fftw_input), NULL, 1, transform_size,
-                                        reinterpret_cast<fftwf_complex*>(fftw_output), NULL, 1, transform_size, FFTW_FORWARD, FFTW_MEASURE);
+        {
+            std::lock_guard<std::mutex> lock(fftw_planner_mutex());
+            fftw_plan = fftwf_plan_many_dft(1, &transform_size, static_cast<int>(batch_size), reinterpret_cast<fftwf_complex*>(fftw_input), NULL, 1, transform_size,
+                                            reinterpret_cast<fftwf_complex*>(fftw_output), NULL, 1, transform_size, FFTW_FORWARD, FFTW_MEASURE);
+        }
         if (fftw_plan == NULL) {
             last_error = "Unable to create FFTW fallback plan";
             return false;

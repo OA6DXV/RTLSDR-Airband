@@ -240,7 +240,7 @@ elseif(PLATFORM STREQUAL "vulkan")
 	if(VULKAN_GLSLC)
 		add_custom_command(
 			OUTPUT ${VULKAN_SHADER_SPV}
-			COMMAND ${VULKAN_GLSLC} -O --target-env=vulkan1.1 -fshader-stage=compute
+			COMMAND ${VULKAN_GLSLC} -O --target-env=vulkan1.0 -fshader-stage=compute
 				-o ${VULKAN_SHADER_SPV} ${VULKAN_SHADER_SOURCE}
 			DEPENDS ${VULKAN_SHADER_SOURCE}
 			VERBATIM
@@ -248,7 +248,7 @@ elseif(PLATFORM STREQUAL "vulkan")
 	else()
 		add_custom_command(
 			OUTPUT ${VULKAN_SHADER_SPV}
-			COMMAND ${VULKAN_GLSLANG_VALIDATOR} -V --target-env vulkan1.1 -S comp
+			COMMAND ${VULKAN_GLSLANG_VALIDATOR} -V --target-env vulkan1.0 -S comp
 				-o ${VULKAN_SHADER_SPV} ${VULKAN_SHADER_SOURCE}
 			DEPENDS ${VULKAN_SHADER_SOURCE}
 			VERBATIM
