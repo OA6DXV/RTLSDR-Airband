@@ -1,0 +1,98 @@
+name: GPU Platform Build
+
+on:
+  push:
+    branches: [gpu-dev]
+  pull_request:
+    branches: [gpu-dev]
+  workflow_dispatch:
+
+jobs:
+  gpu_build:
+    name: GPU ${{ matrix.arch }} (${{ matrix.platform }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: generic
+            emulated: false
+          - arch: arm64
+            platform: v4cma
+            emulated: true
+            docker_platform: linux/arm64
+          - arch: armhf
+            platform: generic
+            emulated: true
+            docker_platform: linux/arm/v7
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: '0'
+
+      - name: Install project dependencies
+        if: ${{ !matrix.emulated }}
+        run: .github/install_dependencies
+
+      - name: Configure amd64 build
+        if: ${{ !matrix.emulated }}
+        run: |
+          cmake -B builds/gpu-${{ matrix.arch }} \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPLATFORM=${{ matrix.platform }} \
+            -S .
+
+      - name: Build amd64
+        if: ${{ !matrix.emulated }}
+        run: |
+          cmake --build builds/gpu-${{ matrix.arch }} -j$(nproc)
+          file builds/gpu-${{ matrix.arch }}/src/rtl_airband
+
+      - name: Enable QEMU for ARM builds
+        if: ${{ matrix.emulated }}
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64,arm
+
+      - name: Build in ARM userspace
+        if: ${{ matrix.emulated }}
+        run: |
+          docker run --rm \
+            --platform '${{ matrix.docker_platform }}' \
+            -v "$PWD:/work" \
+            -w /work \
+            debian:bookworm-slim \
+            bash -lc '
+              set -eux
+              apt-get update
+              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+                build-essential \
+                ca-certificates \
+                cmake \
+                file \
+                git \
+                libconfig++-dev \
+                libfftw3-dev \
+                libmp3lame-dev \
+                libshout3-dev \
+                linux-libc-dev \
+                pkg-config
+              rm -rf /var/lib/apt/lists/*
+              git config --global --add safe.directory /work
+              echo "Build architecture: $(dpkg --print-architecture)"
+              uname -m
+              cmake -B builds/gpu-${{ matrix.arch }} \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DPLATFORM=${{ matrix.platform }} \
+                -DRTLSDR=OFF \
+                -DMIRISDR=OFF \
+                -DSOAPYSDR=OFF \
+                -DPULSEAUDIO=OFF \
+                -S .
+              cmake --build builds/gpu-${{ matrix.arch }} -j2
+              file builds/gpu-${{ matrix.arch }}/src/rtl_airband
+            '
