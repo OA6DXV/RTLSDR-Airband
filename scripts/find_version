@@ -3,17 +3,18 @@
 PROJECT_ROOT_PATH="$(cd "$(dirname "$0")/.." || exit; pwd)"
 PROJECT_GIT_DIR_PATH="${PROJECT_ROOT_PATH}/.git"
 PROJECT_DIR_NAME="$(basename "${PROJECT_ROOT_PATH}")"
+VERSION_SUFFIX="-OA6DXV"
 
 # if there is a .git directory at the project root then rely on git for the version string
 if [ -r "${PROJECT_GIT_DIR_PATH}" ] ; then
-    git describe --tags --abbrev --dirty --always
+    echo "$(git describe --tags --abbrev --dirty --always)${VERSION_SUFFIX}"
     exit 0
 fi
 
 # if the proejct root directory matches the naming convetion of an extracted archive then
 # get the version number out of that
 if [[ "${PROJECT_DIR_NAME}" =~ ^RTLSDR-Airband-[0-9]*\.[0-9]*\.[0-9]*$ ]]; then
-    echo "${PROJECT_DIR_NAME}" | cut -d '-' -f 3
+    echo "$(echo "${PROJECT_DIR_NAME}" | cut -d '-' -f 3)${VERSION_SUFFIX}"
     exit 0
 fi
 
