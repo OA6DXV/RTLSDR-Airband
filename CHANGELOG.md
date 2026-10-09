@@ -1,5 +1,16 @@
 # Changelog
 
+## unstable - incomplete Vulkan tuning
+
+This branch preserves experimental changes that are not finalized or release-ready.
+
+- `src/rtl_airband.h`: uses runtime FFT batch sizes, defaulting to 250 for VideoCore, 128 for Vulkan, and 1 for CPU FFTW.
+- `src/config.cpp`: aligns each SDR ring buffer to the selected batch size.
+- `src/rtl_airband.cpp`: accepts Vulkan batch values of 32, 64, 128, or 256; snapshots each IQ batch under the input lock and advances the ring buffer before FFT processing to avoid reading data that the SDR thread may overwrite.
+- `src/vulkan_fft.comp`: adds a shared-memory FFT path for transforms up to 512 points to reduce Vulkan dispatch overhead.
+- `src/vulkan_fft.cpp`: caps workgroups at 64 and allows one Vulkan FFT context per process; additional demodulation threads use the existing FFTW fallback.
+- Runtime testing and cross-device tuning remain outstanding. The workgroup cap and single-context policy are provisional.
+
 ## main - OA6DXV GPU acceleration release
 
 This release publishes the GPU acceleration work from `vulkan-dev` into `main`.

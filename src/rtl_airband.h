@@ -96,13 +96,14 @@ struct sample_fft_arg {
     GPU_FFT_COMPLEX* dest;
 };
 extern "C" void samplefft(sample_fft_arg* a, unsigned char* buffer, float* window, float* levels);
-
-#define FFT_BATCH 250
+#define DEFAULT_FFT_BATCH 250
 #elif defined WITH_VULKAN
-#define FFT_BATCH 32
+#define DEFAULT_FFT_BATCH 128
 #else
-#define FFT_BATCH 1
+#define DEFAULT_FFT_BATCH 1
 #endif /* WITH_BCM_VC */
+
+extern size_t fft_batch;
 
 //#define AFC_LOGGING
 

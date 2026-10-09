@@ -26,6 +26,29 @@ std::mutex& fftw_planner_mutex() {
     return mutex;
 }
 
+std::mutex& vulkan_context_mutex() {
+    static std::mutex mutex;
+    return mutex;
+}
+
+bool& vulkan_context_active() {
+    static bool active = false;
+    return active;
+}
+
+bool acquire_vulkan_context() {
+    std::lock_guard<std::mutex> lock(vulkan_context_mutex());
+    if (vulkan_context_active())
+        return false;
+    vulkan_context_active() = true;
+    return true;
+}
+
+void release_vulkan_context() {
+    std::lock_guard<std::mutex> lock(vulkan_context_mutex());
+    vulkan_context_active() = false;
+}
+
 std::string lower_string(const std::string& value) {
     std::string result(value);
     for (size_t i = 0; i < result.size(); ++i)
@@ -76,6 +99,7 @@ struct VulkanFFT::Impl {
     std::string fallback_reason;
     std::string last_error;
     uint32_t workgroup_size;
+    bool owns_vulkan_context;
 
     VkInstance instance;
     VkPhysicalDevice physical_device;
@@ -107,6 +131,7 @@ struct VulkanFFT::Impl {
           fft_log2(0),
           backend(BACKEND_NONE),
           workgroup_size(0),
+          owns_vulkan_context(false),
           instance(VK_NULL_HANDLE),
           physical_device(VK_NULL_HANDLE),
           device(VK_NULL_HANDLE),
@@ -140,6 +165,8 @@ struct VulkanFFT::Impl {
     ~Impl() {
         destroy_vulkan();
         destroy_fftw();
+        if (owns_vulkan_context)
+            release_vulkan_context();
     }
 
     void destroy_buffer(Buffer& buffer) {
@@ -411,7 +438,7 @@ struct VulkanFFT::Impl {
 
         uint32_t limit = physical_properties.limits.maxComputeWorkGroupInvocations;
         limit = std::min(limit, physical_properties.limits.maxComputeWorkGroupSize[0]);
-        limit = std::min(limit, static_cast<uint32_t>(256));
+        limit = std::min(limit, static_cast<uint32_t>(64));
         if (limit == 0) {
             last_error = "Selected Vulkan device reports no usable compute workgroup size";
             return false;
@@ -608,19 +635,30 @@ struct VulkanFFT::Impl {
         constants.fft_size = static_cast<uint32_t>(fft_size);
         constants.batch_size = static_cast<uint32_t>(batch_size);
         constants.stage = 0;
-        constants.mode = 0;
-        vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_layout, 0, 1, &descriptor_sets[0], 0, NULL);
-        vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
-        vkCmdDispatch(command_buffer, dispatch_count(fft_size * batch_size), 1, 1);
+        vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
 
-        for (uint32_t stage = 1; stage <= fft_log2; ++stage) {
-            shader_barrier(command_buffer);
-            uint32_t set_index = (stage & 1u) != 0 ? 1u : 0u;
-            constants.stage = stage;
-            constants.mode = 1;
-            vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_layout, 0, 1, &descriptor_sets[set_index], 0, NULL);
+        if (fft_size <= 512) {
+            constants.mode = 2;
+            vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_layout, 0, 1, &descriptor_sets[0], 0, NULL);
             vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
-            vkCmdDispatch(command_buffer, dispatch_count((fft_size >> 1u) * batch_size), 1, 1);
+            vkCmdDispatch(command_buffer, static_cast<uint32_t>(batch_size), 1, 1);
+            final_buffer = &buffer_b;
+        } else {
+            constants.mode = 0;
+            vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_layout, 0, 1, &descriptor_sets[0], 0, NULL);
+            vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
+            vkCmdDispatch(command_buffer, dispatch_count(fft_size * batch_size), 1, 1);
+
+            for (uint32_t stage = 1; stage <= fft_log2; ++stage) {
+                shader_barrier(command_buffer);
+                uint32_t set_index = (stage & 1u) != 0 ? 1u : 0u;
+                constants.stage = stage;
+                constants.mode = 1;
+                vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_layout, 0, 1, &descriptor_sets[set_index], 0, NULL);
+                vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
+                vkCmdDispatch(command_buffer, dispatch_count((fft_size >> 1u) * batch_size), 1, 1);
+            }
+            final_buffer = (fft_log2 & 1u) != 0 ? &buffer_a : &buffer_b;
         }
 
         VkMemoryBarrier host_read_barrier = {};
@@ -741,10 +779,17 @@ struct VulkanFFT::Impl {
     bool initialize() {
         const char* disabled = std::getenv("RTL_AIRBAND_VULKAN_DISABLE");
         if (disabled == NULL || std::strcmp(disabled, "1") != 0) {
-            if (init_vulkan())
-                return true;
-            fallback_reason = last_error;
-            destroy_vulkan();
+            if (acquire_vulkan_context()) {
+                owns_vulkan_context = true;
+                if (init_vulkan())
+                    return true;
+                fallback_reason = last_error;
+                destroy_vulkan();
+                owns_vulkan_context = false;
+                release_vulkan_context();
+            } else {
+                fallback_reason = "Another demodulator owns the Vulkan context";
+            }
         } else {
             fallback_reason = "Vulkan disabled by RTL_AIRBAND_VULKAN_DISABLE=1";
         }

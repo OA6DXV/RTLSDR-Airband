@@ -64,7 +64,50 @@ void fft_stage(uint index) {
     output_buffer.value[base + second] = a - t;
 }
 
+shared vec2 fft_shared[512];
+
+void small_fft(uint transform_index) {
+    if (transform_index >= params.batch_size)
+        return;
+
+    uint lane = gl_LocalInvocationID.x;
+    uint stride = gl_WorkGroupSize.x;
+    uint base = transform_index * params.fft_size;
+    uint bits = uint(findMSB(params.fft_size));
+
+    for (uint i = lane; i < params.fft_size; i += stride) {
+        uint reversed = bitfieldReverse(i) >> (32u - bits);
+        fft_shared[reversed] = input_buffer.value[base + i];
+    }
+    barrier();
+
+    for (uint stage = 1u; stage <= bits; ++stage) {
+        uint span = 1u << stage;
+        uint half_span = span >> 1u;
+        for (uint butterfly = lane; butterfly < (params.fft_size >> 1u); butterfly += stride) {
+            uint group = butterfly / half_span;
+            uint offset = butterfly - group * half_span;
+            uint first = group * span + offset;
+            uint second = first + half_span;
+            uint twiddle_index = offset * (params.fft_size / span);
+            vec2 a = fft_shared[first];
+            vec2 t = complex_multiply(fft_shared[second], twiddle_buffer.value[twiddle_index]);
+            fft_shared[first] = a + t;
+            fft_shared[second] = a - t;
+        }
+        barrier();
+    }
+
+    for (uint i = lane; i < params.fft_size; i += stride)
+        output_buffer.value[base + i] = fft_shared[i];
+}
+
 void main() {
+    if (params.mode == 2u) {
+        small_fft(gl_WorkGroupID.x);
+        return;
+    }
+
     uint index = gl_GlobalInvocationID.x;
     if (params.mode == 0u)
         bit_reverse_pass(index);

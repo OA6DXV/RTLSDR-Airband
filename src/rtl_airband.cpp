@@ -33,8 +33,8 @@
 #include "hello_fft/mailbox.h"
 #else
 #include <memory>
-#include <vector>
 #endif /* WITH_BCM_VC */
+#include <vector>
 
 #include <fcntl.h>
 #include <lame/lame.h>
@@ -88,6 +88,7 @@ char* stats_filepath = NULL;
 int stats_update_interval = 15;
 size_t fft_size_log = DEFAULT_FFT_SIZE_LOG;
 size_t fft_size = 1 << fft_size_log;
+size_t fft_batch = DEFAULT_FFT_BATCH;
 
 #ifdef NFM
 float alpha = exp(-1.0f / (WAVE_RATE * 2e-4));
@@ -325,7 +326,7 @@ void* demodulate(void* params) {
 #ifdef WITH_BCM_VC
     int mb = mbox_open();
     struct GPU_FFT* fft = NULL;
-    int ret = gpu_fft_prepare(mb, fft_size_log, GPU_FFT_FWD, FFT_BATCH, &fft);
+    int ret = gpu_fft_prepare(mb, fft_size_log, GPU_FFT_FWD, static_cast<int>(fft_batch), &fft);
     switch (ret) {
         case -1:
             log(LOG_CRIT, "Unable to enable V3D. Please check your firmware is up to date.\n");
@@ -347,15 +348,15 @@ void* demodulate(void* params) {
 #endif
     }
 #elif defined WITH_VULKAN
-    VulkanFFT fft(fft_size, FFT_BATCH);
+    VulkanFFT fft(fft_size, fft_batch);
     if (!fft.initialize()) {
         log(LOG_CRIT, "Unable to initialize Vulkan FFT or FFTW fallback: %s\n", fft.last_error().c_str());
         error();
     }
     if (fft.using_vulkan()) {
-        log(LOG_INFO, "Vulkan FFT: device=%s, workgroup=%zu, batch=%d\n", fft.device_name().c_str(), fft.workgroup_size(), FFT_BATCH);
+        log(LOG_INFO, "Vulkan FFT: device=%s, workgroup=%zu, batch=%zu\n", fft.device_name().c_str(), fft.workgroup_size(), fft_batch);
     } else {
-        log(LOG_WARNING, "Vulkan FFT unavailable (%s); using %s, batch=%d\n", fft.fallback_reason().c_str(), fft.device_name().c_str(), FFT_BATCH);
+        log(LOG_WARNING, "Vulkan FFT unavailable (%s); using %s, batch=%zu\n", fft.fallback_reason().c_str(), fft.device_name().c_str(), fft_batch);
     }
     VulkanComplex* fftin = fft.input();
     const VulkanComplex* fftout = fft.output();
@@ -410,6 +411,7 @@ void* demodulate(void* params) {
 #endif /* DEBUG */
     size_t available;
     int device_num = demod_params->device_start;
+    std::vector<unsigned char> fft_input;
     while (true) {
         if (do_exit) {
 #ifdef WITH_BCM_VC
@@ -423,13 +425,6 @@ void* demodulate(void* params) {
         }
 
         device_t* dev = devices + device_num;
-
-        pthread_mutex_lock(&dev->input->buffer_lock);
-        if (dev->input->bufe >= dev->input->bufs)
-            available = dev->input->bufe - dev->input->bufs;
-        else
-            available = dev->input->buf_size - dev->input->bufs + dev->input->bufe;
-        pthread_mutex_unlock(&dev->input->buffer_lock);
 
         if (devices_running == 0) {
             log(LOG_ERR, "All receivers failed, exiting\n");
@@ -446,21 +441,38 @@ void* demodulate(void* params) {
             continue;
         }
 
-        // number of input bytes per output wave sample (x 2 for I and Q)
         size_t bps = 2 * dev->input->bytes_per_sample * (size_t)round((double)dev->input->sample_rate / (double)WAVE_RATE);
-        if (available < bps * FFT_BATCH + fft_size * dev->input->bytes_per_sample * 2) {
-            // move to next device
+        size_t consume_bytes = bps * fft_batch;
+        size_t required_bytes = consume_bytes + fft_size * dev->input->bytes_per_sample * 2;
+        fft_input.resize(required_bytes);
+
+        pthread_mutex_lock(&dev->input->buffer_lock);
+        if (dev->input->bufe >= dev->input->bufs)
+            available = dev->input->bufe - dev->input->bufs;
+        else
+            available = dev->input->buf_size - dev->input->bufs + dev->input->bufe;
+
+        if (available < required_bytes) {
+            pthread_mutex_unlock(&dev->input->buffer_lock);
             device_num = next_device(demod_params, device_num);
             SLEEP(10);
             continue;
         }
 
+        size_t input_start = dev->input->bufs;
+        size_t first_chunk = std::min(required_bytes, dev->input->buf_size - input_start);
+        memcpy(fft_input.data(), dev->input->buffer + input_start, first_chunk);
+        if (first_chunk < required_bytes)
+            memcpy(fft_input.data() + first_chunk, dev->input->buffer, required_bytes - first_chunk);
+        dev->input->bufs = (input_start + consume_bytes) % dev->input->buf_size;
+        pthread_mutex_unlock(&dev->input->buffer_lock);
+
         if (dev->input->sfmt == SFMT_S16) {
             float const scale = 1.0f / dev->input->fullscale;
 #ifdef WITH_BCM_VC
             struct GPU_FFT_COMPLEX* ptr = fft->in;
-            for (size_t b = 0; b < FFT_BATCH; b++, ptr += fft->step) {
-                short* buf2 = (short*)(dev->input->buffer + dev->input->bufs + b * bps);
+            for (size_t b = 0; b < fft_batch; b++, ptr += fft->step) {
+                short* buf2 = (short*)(fft_input.data() + b * bps);
                 for (size_t i = 0; i < fft_size; i++, buf2 += 2) {
                     ptr[i].re = scale * (float)buf2[0] * window[i * 2];
                     ptr[i].im = scale * (float)buf2[1] * window[i * 2];
@@ -468,15 +480,15 @@ void* demodulate(void* params) {
             }
 #elif defined WITH_VULKAN
             VulkanComplex* ptr = fftin;
-            for (size_t b = 0; b < FFT_BATCH; b++, ptr += fft_size) {
-                short* buf2 = (short*)(dev->input->buffer + dev->input->bufs + b * bps);
+            for (size_t b = 0; b < fft_batch; b++, ptr += fft_size) {
+                short* buf2 = (short*)(fft_input.data() + b * bps);
                 for (size_t i = 0; i < fft_size; i++, buf2 += 2) {
                     ptr[i].re = scale * (float)buf2[0] * window[i];
                     ptr[i].im = scale * (float)buf2[1] * window[i];
                 }
             }
 #else
-            short* buf2 = (short*)(dev->input->buffer + dev->input->bufs);
+            short* buf2 = (short*)(fft_input.data());
             for (size_t i = 0; i < fft_size; i++, buf2 += 2) {
                 fftin[i][0] = scale * (float)buf2[0] * window[i];
                 fftin[i][1] = scale * (float)buf2[1] * window[i];
@@ -486,8 +498,8 @@ void* demodulate(void* params) {
             float const scale = 1.0f / dev->input->fullscale;
 #ifdef WITH_BCM_VC
             struct GPU_FFT_COMPLEX* ptr = fft->in;
-            for (size_t b = 0; b < FFT_BATCH; b++, ptr += fft->step) {
-                float* buf2 = (float*)(dev->input->buffer + dev->input->bufs + b * bps);
+            for (size_t b = 0; b < fft_batch; b++, ptr += fft->step) {
+                float* buf2 = (float*)(fft_input.data() + b * bps);
                 for (size_t i = 0; i < fft_size; i++, buf2 += 2) {
                     ptr[i].re = scale * buf2[0] * window[i * 2];
                     ptr[i].im = scale * buf2[1] * window[i * 2];
@@ -495,15 +507,15 @@ void* demodulate(void* params) {
             }
 #elif defined WITH_VULKAN
             VulkanComplex* ptr = fftin;
-            for (size_t b = 0; b < FFT_BATCH; b++, ptr += fft_size) {
-                float* buf2 = (float*)(dev->input->buffer + dev->input->bufs + b * bps);
+            for (size_t b = 0; b < fft_batch; b++, ptr += fft_size) {
+                float* buf2 = (float*)(fft_input.data() + b * bps);
                 for (size_t i = 0; i < fft_size; i++, buf2 += 2) {
                     ptr[i].re = scale * buf2[0] * window[i];
                     ptr[i].im = scale * buf2[1] * window[i];
                 }
             }
 #else  // WITH_BCM_VC
-            float* buf2 = (float*)(dev->input->buffer + dev->input->bufs);
+            float* buf2 = (float*)(fft_input.data());
             for (size_t i = 0; i < fft_size; i++, buf2 += 2) {
                 fftin[i][0] = scale * buf2[0] * window[i];
                 fftin[i][1] = scale * buf2[1] * window[i];
@@ -515,13 +527,13 @@ void* demodulate(void* params) {
 
 #ifdef WITH_BCM_VC
             sample_fft_arg sfa = {fft_size / 4, fft->in};
-            for (size_t i = 0; i < FFT_BATCH; i++) {
-                samplefft(&sfa, dev->input->buffer + dev->input->bufs + i * bps, window, levels_ptr);
+            for (size_t i = 0; i < fft_batch; i++) {
+                samplefft(&sfa, fft_input.data() + i * bps, window, levels_ptr);
                 sfa.dest += fft->step;
             }
 #elif defined WITH_VULKAN
-            for (size_t b = 0; b < FFT_BATCH; b++) {
-                unsigned char* buf2 = dev->input->buffer + dev->input->bufs + b * bps;
+            for (size_t b = 0; b < fft_batch; b++) {
+                unsigned char* buf2 = fft_input.data() + b * bps;
                 VulkanComplex* ptr = fftin + b * fft_size;
                 for (size_t i = 0; i < fft_size; i++, buf2 += 2) {
                     ptr[i].re = levels_ptr[buf2[0]] * window[i];
@@ -529,7 +541,7 @@ void* demodulate(void* params) {
                 }
             }
 #else
-            unsigned char* buf2 = dev->input->buffer + dev->input->bufs;
+            unsigned char* buf2 = fft_input.data();
             for (size_t i = 0; i < fft_size; i++, buf2 += 2) {
                 fftin[i][0] = levels_ptr[buf2[0]] * window[i];
                 fftin[i][1] = levels_ptr[buf2[1]] * window[i];
@@ -564,13 +576,13 @@ void* demodulate(void* params) {
             __builtin_prefetch(wavein, 1);
             const int bin = dev->bins[i];
             const GPU_FFT_COMPLEX* fftout = fft->out + bin;
-            for (int j = 0; j < FFT_BATCH; j++, ++wavein, fftout += fft->step)
+            for (int j = 0; j < fft_batch; j++, ++wavein, fftout += fft->step)
                 *wavein = sqrtf(fftout->im * fftout->im + fftout->re * fftout->re);
         }
         for (int j = 0; j < dev->channel_count; j++) {
             if (dev->channels[j].needs_raw_iq) {
                 struct GPU_FFT_COMPLEX* ptr = fft->out;
-                for (int job = 0; job < FFT_BATCH; job++) {
+                for (int job = 0; job < fft_batch; job++) {
                     dev->channels[j].iq_in[2 * (dev->waveend + job)] = ptr[dev->bins[j]].re;
                     dev->channels[j].iq_in[2 * (dev->waveend + job) + 1] = ptr[dev->bins[j]].im;
                     ptr += fft->step;
@@ -583,13 +595,13 @@ void* demodulate(void* params) {
             __builtin_prefetch(wavein, 1);
             const int bin = dev->bins[i];
             const VulkanComplex* result = fftout + bin;
-            for (int j = 0; j < FFT_BATCH; j++, ++wavein, result += fft_size)
+            for (int j = 0; j < fft_batch; j++, ++wavein, result += fft_size)
                 *wavein = sqrtf(result->im * result->im + result->re * result->re);
         }
         for (int j = 0; j < dev->channel_count; j++) {
             if (dev->channels[j].needs_raw_iq) {
                 const VulkanComplex* result = fftout;
-                for (int job = 0; job < FFT_BATCH; job++) {
+                for (int job = 0; job < fft_batch; job++) {
                     dev->channels[j].iq_in[2 * (dev->waveend + job)] = result[dev->bins[j]].re;
                     dev->channels[j].iq_in[2 * (dev->waveend + job) + 1] = result[dev->bins[j]].im;
                     result += fft_size;
@@ -606,7 +618,7 @@ void* demodulate(void* params) {
         }
 #endif /* WITH_BCM_VC */
 
-        dev->waveend += FFT_BATCH;
+        dev->waveend += fft_batch;
 
         if (dev->waveend >= WAVE_BATCH + AGC_EXTRA) {
             for (int i = 0; i < dev->channel_count; i++) {
@@ -785,7 +797,6 @@ void* demodulate(void* params) {
             }
         }
 
-        dev->input->bufs = (dev->input->bufs + bps * FFT_BATCH) % dev->input->buf_size;
         device_num = next_device(demod_params, device_num);
     }
 }
@@ -902,6 +913,16 @@ int main(int argc, char* argv[]) {
         Setting& root = config.getRoot();
         if (root.exists("pidfile"))
             pidfile = strdup(root["pidfile"]);
+#ifdef WITH_VULKAN
+        if (root.exists("vulkan_batch")) {
+            int batch = (int)root["vulkan_batch"];
+            if (batch != 32 && batch != 64 && batch != 128 && batch != 256) {
+                cerr << "Configuration error: vulkan_batch must be 32, 64, 128, or 256\n";
+                error();
+            }
+            fft_batch = (size_t)batch;
+        }
+#endif /* WITH_VULKAN */
         if (root.exists("fft_size")) {
             int fsize = (int)(root["fft_size"]);
             fft_size_log = 0;

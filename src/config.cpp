@@ -794,9 +794,9 @@ int parse_devices(libconfig::Setting& devs) {
         assert(dev->input->sample_rate > WAVE_RATE);
 
         // For the input buffer size use a base value and round it up to the nearest multiple
-        // of FFT_BATCH blocks of input samples.
+        // of fft_batch blocks of input samples.
         // ceil is required here because sample rate is not guaranteed to be an integer multiple of WAVE_RATE.
-        size_t fft_batch_len = FFT_BATCH * (2 * dev->input->bytes_per_sample * (size_t)ceil((double)dev->input->sample_rate / (double)WAVE_RATE));
+        size_t fft_batch_len = fft_batch * (2 * dev->input->bytes_per_sample * (size_t)ceil((double)dev->input->sample_rate / (double)WAVE_RATE));
         dev->input->buf_size = MIN_BUF_SIZE;
         if (dev->input->buf_size % fft_batch_len != 0)
             dev->input->buf_size += fft_batch_len - dev->input->buf_size % fft_batch_len;
